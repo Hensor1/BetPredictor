@@ -53,9 +53,9 @@ def get_lineup(event_id):
     r.raise_for_status()
     return r.json()
 
-def get_standings(seasons_id, tournament_id):
-    url = f"{BASE_URL}/v1/seasons/standings"
-    params = {"seasons_id": seasons_id, "tournament_id": tournament_id, "standing_type":"total"}
+def get_standings(event_id):
+    url = f"{BASE_URL}/v1/events/form"
+    params = {"event_id": event_id}
 
     r = requests.get(url, headers=HEADERS, params=params)
     r.raise_for_status()
@@ -92,15 +92,13 @@ def scrape_stats(event_ids):
             away_formation = away_block["formation"]
 
             # Table positions
-            season_ids = get_seasonIds(1)
-            seasons_id = season_ids["data"]["seasons"][0]["id"]
-            tournament_id = 1
-            standings = get_standings(seasons_id, tournament_id)
+            #season_ids = get_seasonIds(1)
+            #seasons_id = season_ids["data"]["seasons"][0]["id"]
+            #tournament_id = 1
+            standings = get_standings(event_id)
 
-            table_rows = standings["data"][0]["rows"]
-
-            home_pos = next((t["position"] for t in table_rows if t["team"]["name"] == home_name), 0)
-            away_pos = next((t["position"] for t in table_rows if t["team"]["name"] == away_name), 0)
+            home_pos = standings["data"]["homeTeam"]["position"]
+            away_pos = standings["data"]["awayTeam"]["position"]
 
             if TEAM_ID == home_team_id:
                 target_block = home_block
