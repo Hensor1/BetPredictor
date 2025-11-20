@@ -4,6 +4,9 @@ import csv
 import time
 import re
 from pathlib import Path
+from dotenv import load_dotenv
+
+load_dotenv()
 
 #Config
 
@@ -18,13 +21,25 @@ HEADERS = {
 
 OUT_DIR = Path("output_csvs")
 OUT_DIR.mkdir(exist_ok=True)
+PROCESSED_FILE = Path("processed_matches.txt")
 
+#Functions
 def sanitize_filename(s: str) -> str:
     s = re.sub(r"[^\w\s-]", "", s)
     s = re.sub(r"\s+", "_", s).strip("_")
     return s[:120]
 
-#Functions
+def load_processed_matches():
+    if not PROCESSED_FILE.exists():
+        return set()
+
+    with open(PROCESSED_FILE, "r") as f:
+        return {int(line.strip()) for line in f}
+
+def save_processed_matches(processed: set):
+    with open(PROCESSED_FILE, "w") as f:
+        for mid in sorted(processed):
+            f.write(f"{mid}\n")
 
 def get_team_matches(team_id):
     url = f"{BASE_URL}/v1/teams/events"
@@ -34,8 +49,7 @@ def get_team_matches(team_id):
     r = requests.get(url, headers=HEADERS, params=params)
     r.raise_for_status()
     events = r.json().get("data", {}).get("events", [])
-    match_ids = [e["id"] for e in events]
-    return match_ids
+    return [e["id"] for e in events]
 
 def get_event_data(event_id):
     url = f"{BASE_URL}/v1/events/data"
@@ -69,7 +83,7 @@ def get_seasonIds(tournament_id):
     r.raise_for_status()
     return r.json()
 
-def scrape_stats(event_ids):
+def scrape_stats(event_ids, processed):
     players_dict = {}
 
     for event_id in event_ids:
@@ -92,9 +106,6 @@ def scrape_stats(event_ids):
             away_formation = away_block["formation"]
 
             # Table positions
-            #season_ids = get_seasonIds(1)
-            #seasons_id = season_ids["data"]["seasons"][0]["id"]
-            #tournament_id = 1
             standings = get_standings(event_id)
 
             home_pos = standings["data"]["homeTeam"]["position"]
@@ -164,9 +175,12 @@ def scrape_stats(event_ids):
                 players_dict.setdefault(safe_name, []).append(row)
 
         except Exception as e:
-            print(f"⚠️ Feil i kamp {event_id}: {e}")
+            print(f"Error in event {event_id}: {e}")
 
         time.sleep(0.2)
+        processed.add(event_id)
+
+    # Save CSV
 
     meta_keys = [
         "event_id", "team", "team_id", "team_pos", "home_or_away", "formation",
@@ -175,8 +189,6 @@ def scrape_stats(event_ids):
     ]
 
     for safe_name, rows in players_dict.items():
-
-        # Save CSV
         all_keys = set()
         for r in rows:
             all_keys.update(r.keys())
@@ -211,11 +223,19 @@ def scrape_stats(event_ids):
                 out_row = {k: r.get(k, "") for k in final_header}
                 writer.writerow(out_row)
 
-        print(f"💾 Lagret {len(rows)} rader for {safe_name} → {filename}")
+        print(f"Saved {len(rows)} rows for {safe_name} → {filename}")
 
 
 
 if __name__ == "__main__":
-    #MATCH_IDS = get_team_matches(TEAM_ID, SEASON_ID)
-    MATCH_IDS = [12436611]
-    scrape_stats(MATCH_IDS)
+    processed_matches = load_processed_matches()
+    #all_matches = get_team_matches(TEAM_ID)
+    all_matches = [12436611]
+
+    MATCH_IDS = [mid for mid in all_matches if mid not in processed_matches]
+
+    if MATCH_IDS:
+        scrape_stats(MATCH_IDS, processed_matches)
+        save_processed_matches(processed_matches)
+    else:
+        print("Ingen nye kamper. Alt er allerede prosessert.")
